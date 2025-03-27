@@ -22,20 +22,26 @@ face_cascade = cv2.CascadeClassifier(
 )
 
 
-# Function to classify posture based on body landmarks
+# Function to classify posture based on detected pose landmarks
 def classify_posture(landmarks):
     if not landmarks:
         return "Unknown"
 
-    left_wrist = landmarks[mp_pose.PoseLandmark.LEFT_WRIST].y
-    right_wrist = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].y
-    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y
-    right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y
-    left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP].y
-    right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y
-    left_knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y
-    right_knee = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].y
+    left_wrist = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y
+    right_wrist = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y
+    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y
+    right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y
+    left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y
+    right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y
+    left_knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y
+    right_knee = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y
+    nose = landmarks[mp_pose.PoseLandmark.NOSE.value].y
 
+    # New rule: Sitting & Looking Down
+    if left_hip > left_knee and right_hip > right_knee and nose > left_shoulder:
+        return "Sitting & Looking Down"
+
+    # Existing Rules
     if left_wrist < left_shoulder and right_wrist < right_shoulder:
         return "Hands Up"
     elif left_wrist < left_shoulder or right_wrist < right_shoulder:
@@ -44,8 +50,8 @@ def classify_posture(landmarks):
         return "Sitting"
     elif left_hip < left_knee and right_hip < right_knee:
         return "Standing"
-    else:
-        return "Unknown"
+
+    return "Unknown"
 
 
 # Function to determine behavior based on emotion and posture
@@ -66,12 +72,21 @@ image_path = "test/image1.png"  # Update with your image path
 image = cv2.imread(image_path)
 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-# Resize window to fit text properly
-cv2.namedWindow("Human Behavior Analysis", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("Human Behavior Analysis", 800, 600)
-
 # Detect pose landmarks
 pose_results = pose.process(image_rgb)
+
+# Print pose landmark positions for debugging
+if pose_results.pose_landmarks:
+    for idx, landmark in enumerate(pose_results.pose_landmarks.landmark):
+        print(
+            f"Landmark {mp_pose.PoseLandmark(idx).name}: (x={landmark.x:.2f}, y={landmark.y:.2f})"
+        )
+
+    # Draw landmarks on the image for visualization
+    for landmark in pose_results.pose_landmarks.landmark:
+        h, w, _ = image.shape
+        cx, cy = int(landmark.x * w), int(landmark.y * h)
+        cv2.circle(image, (cx, cy), 5, (0, 255, 0), -1)  # Green circles for landmarks
 
 # Detect face for emotion analysis
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -80,15 +95,18 @@ faces = face_cascade.detectMultiScale(
 )
 
 emotion_detected = "Unknown"
-for x, y, w, h in faces:
-    roi_gray = gray[y : y + h, x : x + w]
-    roi_gray = cv2.resize(roi_gray, (48, 48))
-    roi_gray = roi_gray.astype("float") / 255.0
-    roi_gray = img_to_array(roi_gray)
-    roi_gray = np.expand_dims(roi_gray, axis=0)
+if len(faces) > 0:
+    for x, y, w, h in faces:
+        roi_gray = gray[y : y + h, x : x + w]
+        roi_gray = cv2.resize(roi_gray, (48, 48))
+        roi_gray = roi_gray.astype("float") / 255.0
+        roi_gray = img_to_array(roi_gray)
+        roi_gray = np.expand_dims(roi_gray, axis=0)
 
-    predictions = emotion_model.predict(roi_gray)[0]
-    emotion_detected = emotion_labels[np.argmax(predictions)]
+        predictions = emotion_model.predict(roi_gray)[0]
+        emotion_detected = emotion_labels[np.argmax(predictions)]
+else:
+    print("No face detected, using default emotion: Unknown")
 
 # Get posture classification
 posture_detected = (
